@@ -1,71 +1,45 @@
-use wasm_bindgen::JsCast;
-use web_sys::HtmlCanvasElement;
-use winit::dpi::PhysicalSize;
+use std::{future::Future, task::{Context, Poll}, pin::Pin};
+
+use noise::source::TestSource;
+use wasm_bindgen::{JsCast, JsValue};
+use web_sys::{HtmlCanvasElement, CanvasRenderingContext2d};
+
+use crate::{render::{wgpu_context::WgpuContext, runtime::Runtime, event::EventQueue, camera::Camera}, noise::source::NoiseSource};
 
 pub mod util;
+pub mod render;
+pub mod noise;
 
-pub struct WgpuContext {
-    pub surface: wgpu::Surface,
-    pub device: wgpu::Device,
-    pub queue: wgpu::Queue,
-    pub config: wgpu::SurfaceConfiguration,
-    pub size: winit::dpi::PhysicalSize<u32>
+async fn run_main() -> Result<JsValue, JsValue> {
+    let dom_window = web_sys::window().expect("no global `window` exists");
+    let document = dom_window.document().expect("should have a document on a window");
+    let body = document.body().expect("document should have a body");
+
+    let canvas: HtmlCanvasElement = document.get_element_by_id("wgpu-canvas").expect("Cannot find canvas!").unchecked_into();
+    let (width, height) = (canvas.width(), canvas.height());
+    console_log!("Got canvas!");
+
+    let camera = Camera::new(
+        cgmath::Point3 { x: 0.0, y: 1.0, z: 0.0 },
+        cgmath::Vector3 { x: 0.0, y: 1.0, z: 0.0 },
+        0.0,
+        0.0,
+        width as f32 / height as f32,
+        45.0
+    );
+
+    let context = WgpuContext::new(&canvas, &camera).await;
+    console_log!("Created GPU context!");
+
+    let runtime = Runtime::new(context, canvas, camera);
+    console_log!("Created runtime!");
+    
+    runtime.borrow_mut().request_animation_frame();
+
+    Ok(JsValue::NULL)
 }
 
-impl WgpuContext {
-    pub async fn new(canvas: &HtmlCanvasElement)-> Self {
-        let (width, height) = (canvas.width(), canvas.height());
-        console_log!("Surface size: {} {}", width, height);
-
-        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::default());
-        let surface = instance.create_surface_from_canvas(canvas.clone()).expect("Could not create surface :(");
-
-        let adpater = instance
-            .request_adapter(&wgpu::RequestAdapterOptions {
-                power_preference: wgpu::PowerPreference::HighPerformance,
-                compatible_surface: Some(&surface),
-                force_fallback_adapter: false,
-            })
-            .await
-            .unwrap();
-
-        console_log!("Adapter: {:?}", adpater.get_info());
-
-        let (device, queue) = adpater
-            .request_device(
-                &wgpu::DeviceDescriptor {
-                    features: wgpu::Features::empty(),
-                    limits: wgpu::Limits::downlevel_webgl2_defaults(),
-                    label: None
-                },
-                None,
-            )
-            .await
-            .unwrap();
-
-        let tex_format = surface.get_capabilities(&adpater).formats[0];
-        let config = wgpu::SurfaceConfiguration {
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-            format: tex_format,
-            width,
-            height,
-            present_mode: wgpu::PresentMode::AutoVsync,
-            alpha_mode: wgpu::CompositeAlphaMode::PostMultiplied,
-            view_formats: vec![tex_format]
-        };
-        surface.configure(&device, &config);
-
-        Self {
-            surface,
-            device,
-            queue,
-            config,
-            size: PhysicalSize::new(width, height)
-        }
-    }
-}
-
-async fn run_main() {
+async fn noise_test() -> Result<JsValue, JsValue> {
     let dom_window = web_sys::window().expect("no global `window` exists");
     let document = dom_window.document().expect("should have a document on a window");
     let body = document.body().expect("document should have a body");
@@ -73,14 +47,42 @@ async fn run_main() {
     let canvas: HtmlCanvasElement = document.get_element_by_id("wgpu-canvas").expect("Cannot find canvas!").unchecked_into();
     console_log!("Got canvas!");
 
-    let context = WgpuContext::new(&canvas).await;
-    console_log!("Created GPU context!");
+    let source = TestSource;
 
-    
+    let resoultion: f32 = 1.0 / 20.0;
+    let size = 1000;
+
+    canvas.set_width(size as u32);
+    canvas.set_height(size as u32);
+    canvas.style().set_property("width", &format!("{}px", size)).unwrap();
+    canvas.style().set_property("height", &format!("{}px", size)).unwrap();
+
+    let context: CanvasRenderingContext2d = canvas.get_context("2d").unwrap().unwrap().unchecked_into();
+
+    for xi in 0..size {
+        for yi in 0..size {
+            let x = xi as f32 * resoultion;
+            let y = yi as f32 * resoultion;
+
+            let sample = source.sample(x, y, 0);
+            let sample = sample * 0.5 + 0.5;
+
+            context.set_fill_style(&JsValue::from_str(&format!("rgba({}, {}, {}, 1.0)", sample * 255.0, sample * 255.0, sample * 255.0)));
+            context.fill_rect(xi as _, yi as _, 1.0, 1.0);
+        }
+
+        if (xi + 1) % 10 == 0 {
+            console_log!("{:?} / {}", xi + 1, size);
+        }
+    }
+
+    Ok(JsValue::NULL)
 }
 
 fn main() {
     console_error_panic_hook::set_once();
+    console_log::init_with_level(log::Level::Warn).expect("Couldn't intialize logger");
 
-    pollster::block_on(run_main());
+    wasm_bindgen_futures::future_to_promise(run_main());
+    //wasm_bindgen_futures::future_to_promise(noise_test());
 }

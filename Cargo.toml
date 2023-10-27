@@ -5,9 +5,14 @@ authors = ["Salamander"]
 edition = "2018"
 
 [dependencies]
+bytemuck = { "version" = "1.14.0", "features" = ["derive"]}
+cgmath = "0.18.0"
 console_error_panic_hook = "0.1.7"
-pollster = "0.3.0"
+console_log = "1.0.0"
+delaunator = "1.0.2"
+log = "0.4.20"
 wasm-bindgen = "0.2.87"
+wasm-bindgen-futures = "0.4.37"
 wgpu = {version = "0.17.1", features = ["webgl"]}
 winit = "0.28.7"
 
@@ -19,5 +24,9 @@ features = [
     "HtmlElement",
     "Node",
     "Window",
-    "HtmlCanvasElement"
+    "HtmlCanvasElement",
+    "EventTarget",
+    "KeyboardEvent",
+    "Event",
+    "CanvasRenderingContext2d"
 ]
